@@ -1,6 +1,6 @@
+import asyncio
 import os
 import subprocess
-import json
 import requests
 from pathlib import Path
 
@@ -127,30 +127,31 @@ def tool_list_files(directory: str = ".") -> str:
         return f"✗ list_files error: {e}"
 
 
-def tool_run_command(command: str) -> str:
+async def tool_run_command(command: str) -> str:
     try:
-        result = subprocess.run(
+        proc = await asyncio.create_subprocess_shell(
             command,
-            shell=True,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             cwd=str(WORKSPACE),
-            capture_output=True,
-            text=True,
-            timeout=30,
         )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return "✗ Command timed out (30s limit)"
         output = []
-        if result.stdout:
-            output.append(result.stdout.strip())
-        if result.stderr:
-            output.append(f"[stderr] {result.stderr.strip()}")
-        output.append(f"[exit code: {result.returncode}]")
+        if stdout:
+            output.append(stdout.decode("utf-8", errors="replace").strip())
+        if stderr:
+            output.append(f"[stderr] {stderr.decode('utf-8', errors='replace').strip()}")
+        output.append(f"[exit code: {proc.returncode}]")
         return "\n".join(output) or "Command completed with no output"
-    except subprocess.TimeoutExpired:
-        return "✗ Command timed out (30s limit)"
     except Exception as e:
         return f"✗ run_command error: {e}"
 
 
-def tool_elevenlabs_tts(text: str, voice_id: str, output_path: str, stability: float = 0.5) -> str:
+async def tool_elevenlabs_tts(text: str, voice_id: str, output_path: str, stability: float = 0.5) -> str:
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
         return "✗ ELEVENLABS_API_KEY not set in environment"
@@ -168,7 +169,9 @@ def tool_elevenlabs_tts(text: str, voice_id: str, output_path: str, stability: f
                 "style": 0.4,
             },
         }
-        resp = requests.post(url, json=body, headers=headers, timeout=60)
+        resp = await asyncio.to_thread(
+            lambda: requests.post(url, json=body, headers=headers, timeout=60)
+        )
         if resp.status_code != 200:
             return f"✗ ElevenLabs error {resp.status_code}: {resp.text[:200]}"
         target.write_bytes(resp.content)
@@ -178,22 +181,25 @@ def tool_elevenlabs_tts(text: str, voice_id: str, output_path: str, stability: f
         return f"✗ elevenlabs_tts error: {e}"
 
 
-def tool_web_search(query: str) -> str:
+async def tool_web_search(query: str) -> str:
     try:
         from duckduckgo_search import DDGS
-        results = []
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=5):
-                results.append(f"**{r['title']}**\n{r['href']}\n{r['body']}\n")
+        results = await asyncio.to_thread(
+            lambda: list(DDGS().text(query, max_results=5))
+        )
         if not results:
             return f"No results found for: {query}"
-        return f"Search results for '{query}':\n\n" + "\n---\n".join(results)
+        formatted = [
+            f"**{r['title']}**\n{r['href']}\n{r['body']}\n"
+            for r in results
+        ]
+        return f"Search results for '{query}':\n\n" + "\n---\n".join(formatted)
     except Exception as e:
         return f"✗ web_search error: {e}"
 
 
-def execute_tool(name: str, tool_input: dict) -> str:
-    """Dispatch tool calls by name."""
+async def execute_tool(name: str, tool_input: dict) -> str:
+    """Async dispatch for all tool calls."""
     if name == "write_file":
         return tool_write_file(tool_input["path"], tool_input["content"])
     elif name == "read_file":
@@ -201,15 +207,15 @@ def execute_tool(name: str, tool_input: dict) -> str:
     elif name == "list_files":
         return tool_list_files(tool_input.get("directory", "."))
     elif name == "run_command":
-        return tool_run_command(tool_input["command"])
+        return await tool_run_command(tool_input["command"])
     elif name == "elevenlabs_tts":
-        return tool_elevenlabs_tts(
+        return await tool_elevenlabs_tts(
             tool_input["text"],
             tool_input["voice_id"],
             tool_input["output_path"],
             tool_input.get("stability", 0.5),
         )
     elif name == "web_search":
-        return tool_web_search(tool_input["query"])
+        return await tool_web_search(tool_input["query"])
     else:
         return f"✗ Unknown tool: {name}"

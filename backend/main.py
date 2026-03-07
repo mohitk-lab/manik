@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from typing import AsyncGenerator
@@ -108,7 +109,8 @@ async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
     while iteration < max_iterations:
         iteration += 1
 
-        response = client.messages.create(
+        response = await asyncio.to_thread(
+            client.messages.create,
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=system,
@@ -148,7 +150,7 @@ async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
         tool_results = []
         for block in response.content:
             if block.type == "tool_use":
-                result = execute_tool(block.name, block.input)
+                result = await execute_tool(block.name, block.input)
                 yield sse({
                     "type": "tool_result",
                     "name": block.name,

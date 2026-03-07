@@ -197,10 +197,9 @@ export default function ManikAI() {
 
   const sendMessage = useCallback(async (text) => {
     if (!text.trim()) return;
-    const userMsg = { role: "user", content: text, ts: Date.now() };
     const detected = detectSkills(text);
     setActiveSkills(detected);
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => [...prev, { role: "user", content: text, ts: Date.now() }]);
     setInput("");
     setLoading(true);
 
@@ -208,46 +207,77 @@ export default function ManikAI() {
       ? `\n[Active Skills for this query: ${detected.map(s => s.name).join(", ")}]\nApply these skill domains in your response.`
       : "";
 
-    try {
-      const conversationHistory = messages.slice(-10).map(m => ({
-        role: m.role, content: m.content
-      }));
+    // Placeholder assistant message we'll build up incrementally
+    const assistantId = Date.now();
+    setMessages(prev => [...prev, {
+      role: "assistant", content: "", ts: assistantId, skills: detected, events: []
+    }]);
 
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+    try {
+      const conversationHistory = messages
+        .filter(m => m.role === "user" || (m.role === "assistant" && m.content))
+        .slice(-10)
+        .map(m => ({ role: m.role, content: m.content }));
+
+      const res = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY || "",
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-calls": "true",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: MANIK_SYSTEM_PROMPT + skillContext,
           messages: [...conversationHistory, { role: "user", content: text }],
+          system_extra: skillContext,
         }),
       });
 
-      const data = await res.json();
-      const reply = data.content?.map(c => c.text || "").join("\n") || "API response parse error.";
+      if (!res.ok) {
+        throw new Error(`Backend error ${res.status}: ${await res.text()}`);
+      }
 
-      setMessages(prev => [...prev, {
-        role: "assistant", content: reply, ts: Date.now(), skills: detected
-      }]);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      setStats(prev => ({
-        totalMsgs: prev.totalMsgs + 1,
-        skillsUsed: new Set([...prev.skillsUsed, ...detected.map(s => s.id)]),
-        streak: prev.streak + 1,
-      }));
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          try {
+            const event = JSON.parse(raw);
+            if (event.type === "text") {
+              setMessages(prev => prev.map(m =>
+                m.ts === assistantId
+                  ? { ...m, content: m.content + event.content }
+                  : m
+              ));
+            } else if (event.type === "tool_use" || event.type === "tool_result") {
+              setMessages(prev => prev.map(m =>
+                m.ts === assistantId
+                  ? { ...m, events: [...(m.events || []), event] }
+                  : m
+              ));
+            } else if (event.type === "done") {
+              setStats(prev => ({
+                totalMsgs: prev.totalMsgs + 1,
+                skillsUsed: new Set([...prev.skillsUsed, ...detected.map(s => s.id)]),
+                streak: prev.streak + 1,
+              }));
+            }
+          } catch (_) { /* ignore malformed SSE line */ }
+        }
+      }
 
     } catch (err) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `Connection issue — MANIK.AI is still here. Error: ${err.message}\n\nTip: Set VITE_ANTHROPIC_API_KEY in your .env file.`,
-        ts: Date.now(), skills: []
-      }]);
+      setMessages(prev => prev.map(m =>
+        m.ts === assistantId
+          ? { ...m, content: `Connection issue — MANIK.AI is still here. Error: ${err.message}\n\nTip: Start the backend with: cd backend && uvicorn main:app --reload` }
+          : m
+      ));
     }
     setLoading(false);
   }, [messages]);
@@ -391,6 +421,7 @@ export default function ManikAI() {
                 alignItems: msg.role === "user" ? "flex-end" : "flex-start",
                 gap: 4,
               }}>
+                {/* Skill badges */}
                 {msg.role === "assistant" && msg.skills?.length > 0 && (
                   <div style={{ display: "flex", gap: 4, marginLeft: 4, flexWrap: "wrap" }}>
                     {msg.skills.map(s => (
@@ -402,16 +433,58 @@ export default function ManikAI() {
                     ))}
                   </div>
                 )}
-                <div style={{
-                  maxWidth: "85%", padding: "12px 16px",
-                  background: msg.role === "user" ? "#1a1010" : "#111",
-                  border: `1px solid ${msg.role === "user" ? "#ef444420" : "#1f1f1f"}`,
-                  borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                  fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap",
-                  wordBreak: "break-word", color: "#d0d0d0",
-                }}>
-                  {msg.content}
-                </div>
+
+                {/* Tool event blocks (tool_use + tool_result pairs) */}
+                {msg.role === "assistant" && msg.events?.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: "85%" }}>
+                    {msg.events.map((ev, j) => (
+                      <div key={j} style={{
+                        padding: "8px 12px",
+                        background: ev.type === "tool_use" ? "#0d1a2a" : "#0a1a0a",
+                        border: `1px solid ${ev.type === "tool_use" ? "#3b82f630" : "#10b98130"}`,
+                        borderRadius: 8, fontSize: 11, fontFamily: "inherit",
+                      }}>
+                        {ev.type === "tool_use" && (
+                          <div style={{ color: "#3b82f6" }}>
+                            <span style={{ opacity: 0.6 }}>🔧 </span>
+                            <span style={{ fontWeight: 700 }}>{ev.name}</span>
+                            {ev.input && Object.keys(ev.input).length > 0 && (
+                              <span style={{ color: "#555", marginLeft: 8, fontSize: 10 }}>
+                                {Object.entries(ev.input).map(([k, v]) =>
+                                  `${k}: ${typeof v === "string" ? v.slice(0, 40) + (v.length > 40 ? "…" : "") : JSON.stringify(v)}`
+                                ).join(" • ")}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {ev.type === "tool_result" && (
+                          <div style={{ color: "#10b981" }}>
+                            <span style={{ opacity: 0.7 }}>✓ </span>
+                            <span style={{ fontWeight: 600 }}>{ev.name}: </span>
+                            <span style={{ color: "#888", fontSize: 10 }}>
+                              {typeof ev.result === "string" ? ev.result.split("\n")[0].slice(0, 80) : "done"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Main message bubble */}
+                {(msg.role === "user" || msg.content) && (
+                  <div style={{
+                    maxWidth: "85%", padding: "12px 16px",
+                    background: msg.role === "user" ? "#1a1010" : "#111",
+                    border: `1px solid ${msg.role === "user" ? "#ef444420" : "#1f1f1f"}`,
+                    borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                    fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap",
+                    wordBreak: "break-word", color: "#d0d0d0",
+                  }}>
+                    {msg.content}
+                  </div>
+                )}
+
                 <div style={{ fontSize: 8, color: "#333", padding: "0 4px" }}>
                   {new Date(msg.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                 </div>

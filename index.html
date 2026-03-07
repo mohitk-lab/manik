@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>For You</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Lora:ital@0;1&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #fff0f3 0%, #ffe4e8 50%, #ffd6de 100%);
+      font-family: 'Playfair Display', serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Floating hearts background */
+    .hearts-bg {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .heart-particle {
+      position: absolute;
+      bottom: -40px;
+      font-size: 1.2rem;
+      opacity: 0;
+      animation: floatUp linear infinite;
+      color: #e8a0b0;
+    }
+    @keyframes floatUp {
+      0%   { transform: translateY(0) rotate(0deg) scale(0.8); opacity: 0; }
+      10%  { opacity: 0.5; }
+      90%  { opacity: 0.2; }
+      100% { transform: translateY(-110vh) rotate(25deg) scale(1.2); opacity: 0; }
+    }
+
+    /* Main card */
+    .card {
+      position: relative;
+      z-index: 1;
+      background: rgba(255,255,255,0.65);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,182,196,0.5);
+      border-radius: 32px;
+      padding: 48px 40px 44px;
+      max-width: 440px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 8px 48px rgba(220,100,130,0.12), 0 2px 12px rgba(220,100,130,0.08);
+    }
+
+    /* Puppy */
+    .puppy-wrap {
+      margin-bottom: 32px;
+      animation: bob 2.8s ease-in-out infinite;
+    }
+    @keyframes bob {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-10px); }
+    }
+    .puppy {
+      font-size: 90px;
+      line-height: 1;
+      filter: drop-shadow(0 6px 18px rgba(220,100,130,0.2));
+      display: inline-block;
+    }
+
+    /* Subtitle */
+    .subtitle {
+      font-family: 'Lora', serif;
+      font-style: italic;
+      font-size: 0.95rem;
+      color: #c4687a;
+      margin-bottom: 36px;
+      letter-spacing: 0.03em;
+    }
+
+    /* Tab container */
+    .tabs {
+      display: flex;
+      gap: 12px;
+      width: 100%;
+      align-items: center;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 14px 10px;
+      border: none;
+      border-radius: 50px;
+      font-family: 'Playfair Display', serif;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: flex 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+                  padding 0.6s ease,
+                  font-size 0.6s ease,
+                  opacity 0.5s ease,
+                  box-shadow 0.3s ease,
+                  transform 0.15s ease;
+      white-space: nowrap;
+      overflow: hidden;
+      position: relative;
+    }
+    .tab:active { transform: scale(0.96); }
+
+    /* Tab 1 — Maaf kiya */
+    #tab1 {
+      background: linear-gradient(135deg, #f7a8b8, #e8718a);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(232,113,138,0.35);
+    }
+    #tab1:hover { box-shadow: 0 6px 28px rgba(232,113,138,0.5); }
+
+    /* Tab 2 — Maar dalugi */
+    #tab2 {
+      background: linear-gradient(135deg, #ffd6de, #f9b8c6);
+      color: #b05068;
+      box-shadow: 0 4px 20px rgba(240,160,180,0.25);
+    }
+    #tab2:hover { box-shadow: 0 6px 28px rgba(240,160,180,0.4); }
+
+    /* Proposal overlay */
+    .proposal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(255,240,243,0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .proposal.show {
+      display: flex;
+      animation: fadeIn 0.6s ease forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.92); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    .proposal-hearts {
+      font-size: 2.5rem;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50%       { transform: scale(1.18); }
+    }
+    .proposal-text {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(1.6rem, 5vw, 2.6rem);
+      color: #c0415c;
+      line-height: 1.3;
+      text-align: center;
+      padding: 0 24px;
+      text-shadow: 0 2px 16px rgba(192,65,92,0.15);
+    }
+    .proposal-sub {
+      font-family: 'Lora', serif;
+      font-style: italic;
+      color: #c4687a;
+      font-size: 1rem;
+    }
+    .close-btn {
+      margin-top: 12px;
+      background: none;
+      border: 1.5px solid #e8718a;
+      border-radius: 50px;
+      padding: 8px 28px;
+      font-family: 'Lora', serif;
+      font-style: italic;
+      color: #e8718a;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .close-btn:hover { background: #e8718a; color: #fff; }
+  </style>
+</head>
+<body>
+
+  <!-- Floating hearts background -->
+  <div class="hearts-bg" id="heartsBg"></div>
+
+  <!-- Main card -->
+  <div class="card">
+    <div class="puppy-wrap">
+      <span class="puppy">🐶</span>
+    </div>
+    <p class="subtitle">he's waiting for your answer…</p>
+    <div class="tabs" id="tabsContainer">
+      <button class="tab" id="tab1" onclick="onTab1()">Maaf kiya</button>
+      <button class="tab" id="tab2" onclick="onTab2()">Maar dalugi</button>
+    </div>
+  </div>
+
+  <!-- Proposal overlay -->
+  <div class="proposal" id="proposal">
+    <div class="proposal-hearts">&#x1F496;&#x1F436;&#x1F496;</div>
+    <div class="proposal-text">Will you be my life partner?</div>
+    <div class="proposal-sub">the puppy approves &nbsp;&#x1F43E;</div>
+    <button class="close-btn" onclick="closeProposal()">maybe later…</button>
+  </div>
+
+  <script>
+    // ── Tab resize state ──────────────────────────────────────────
+    const tab1El = document.getElementById('tab1');
+    const tab2El = document.getElementById('tab2');
+
+    // [tab1 flex, tab2 flex] per click count (index = number of clicks)
+    const steps = [
+      [1,    1   ],
+      [1.4,  0.75],
+      [1.8,  0.55],
+      [2.4,  0.35],
+      [3.0,  0.15],
+      [1,    0   ],   // step 5: tab2 gone
+    ];
+    let clickCount = 0;
+
+    function applyStep(n) {
+      const [f1, f2] = steps[n];
+      tab1El.style.flex = f1;
+      if (f2 === 0) {
+        tab2El.style.opacity = '0';
+        tab2El.style.flex = '0';
+        tab2El.style.padding = '0';
+        tab2El.style.fontSize = '0';
+        tab2El.style.pointerEvents = 'none';
+        // Remove gap once tab2 is invisible
+        setTimeout(() => { tab2El.style.display = 'none'; }, 600);
+      } else {
+        tab2El.style.flex = f2;
+      }
+    }
+
+    function onTab2() {
+      if (clickCount >= 5) return;
+      clickCount++;
+      applyStep(clickCount);
+
+      // Small shake on the puppy
+      const puppy = document.querySelector('.puppy');
+      puppy.style.animation = 'none';
+      puppy.offsetHeight; // reflow
+      puppy.style.animation = '';
+    }
+
+    function onTab1() {
+      document.getElementById('proposal').classList.add('show');
+      burstHearts();
+    }
+
+    function closeProposal() {
+      document.getElementById('proposal').classList.remove('show');
+    }
+
+    // ── Background floating hearts ────────────────────────────────
+    const bg = document.getElementById('heartsBg');
+    const heartChars = ['♥', '♡', '❤', '💕', '💗'];
+
+    function spawnHeart() {
+      const h = document.createElement('span');
+      h.className = 'heart-particle';
+      h.textContent = heartChars[Math.floor(Math.random() * heartChars.length)];
+      h.style.left = Math.random() * 100 + 'vw';
+      h.style.fontSize = (0.8 + Math.random() * 1.2) + 'rem';
+      const dur = 7 + Math.random() * 8;
+      h.style.animationDuration = dur + 's';
+      h.style.animationDelay = (Math.random() * dur) + 's';
+      bg.appendChild(h);
+      setTimeout(() => h.remove(), (dur + 2) * 1000);
+    }
+
+    // Seed some hearts
+    for (let i = 0; i < 18; i++) spawnHeart();
+    setInterval(spawnHeart, 1200);
+
+    function burstHearts() {
+      for (let i = 0; i < 12; i++) {
+        setTimeout(spawnHeart, i * 80);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,6 +1,18 @@
+# Core
 anthropic
 fastapi
 uvicorn[standard]
 python-dotenv
-duckduckgo-search
+pydantic
+
+# Tools
 requests
+duckduckgo-search
+
+# Messaging connectors (optional — uncomment if you use Telegram)
+# python-telegram-bot>=21.0
+
+# Google integrations (optional — uncomment if you use Calendar/Gmail)
+# google-api-python-client
+# google-auth
+# google-auth-oauthlib

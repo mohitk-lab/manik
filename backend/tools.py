@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import requests
 from pathlib import Path
@@ -74,6 +75,57 @@ TOOL_DEFINITIONS = [
                 "query": {"type": "string", "description": "Search query"},
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "calendar_list_events",
+        "description": "List upcoming events from Google Calendar. Returns next N events.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "max_results": {"type": "integer", "description": "Max events to return (default 10)"},
+                "calendar_id": {"type": "string", "description": "Calendar ID (default: primary)"},
+            },
+        },
+    },
+    {
+        "name": "calendar_create_event",
+        "description": "Create a new event in Google Calendar.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title":       {"type": "string", "description": "Event title/summary"},
+                "start":       {"type": "string", "description": "Start datetime ISO 8601, e.g. '2025-03-15T10:00:00+05:30'"},
+                "end":         {"type": "string", "description": "End datetime ISO 8601"},
+                "description": {"type": "string", "description": "Event description (optional)"},
+                "attendees":   {"type": "array",  "items": {"type": "string"}, "description": "List of attendee emails"},
+            },
+            "required": ["title", "start", "end"],
+        },
+    },
+    {
+        "name": "gmail_list_emails",
+        "description": "List recent emails from Gmail inbox.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "max_results": {"type": "integer", "description": "Max emails to return (default 10)"},
+                "query": {"type": "string", "description": "Gmail search query, e.g. 'is:unread from:boss@company.com'"},
+            },
+        },
+    },
+    {
+        "name": "gmail_send_email",
+        "description": "Send an email via Gmail.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "to":      {"type": "string", "description": "Recipient email address"},
+                "subject": {"type": "string", "description": "Email subject"},
+                "body":    {"type": "string", "description": "Email body (plain text)"},
+                "cc":      {"type": "string", "description": "CC email address (optional)"},
+            },
+            "required": ["to", "subject", "body"],
         },
     },
 ]
@@ -197,6 +249,140 @@ async def tool_web_search(query: str) -> str:
         return f"✗ web_search error: {e}"
 
 
+# ── Google helpers ────────────────────────────────────────────────────────────
+
+def _get_google_service(api: str, version: str):
+    """Build a Google API service from env-var credentials."""
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        from config import GOOGLE_TOKEN_JSON, GOOGLE_CREDENTIALS_JSON
+    except ImportError:
+        return None, "✗ Google libraries not installed. Run: pip install google-api-python-client google-auth"
+
+    if not GOOGLE_TOKEN_JSON:
+        return None, (
+            "✗ GOOGLE_TOKEN_JSON not set. "
+            "Set it in .env (paste your token.json contents as a single-line JSON string). "
+            "See docs/google-setup.md for OAuth2 setup instructions."
+        )
+
+    try:
+        token_data = json.loads(GOOGLE_TOKEN_JSON)
+        creds = Credentials.from_authorized_user_info(token_data)
+        service = build(api, version, credentials=creds)
+        return service, None
+    except Exception as e:
+        return None, f"✗ Google auth error: {e}"
+
+
+def tool_calendar_list_events(max_results: int = 10, calendar_id: str = "primary") -> str:
+    service, err = _get_google_service("calendar", "v3")
+    if err:
+        return err
+    try:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        result = (
+            service.events()
+            .list(
+                calendarId=calendar_id,
+                timeMin=now,
+                maxResults=max_results,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
+        events = result.get("items", [])
+        if not events:
+            return "No upcoming events found."
+        lines = []
+        for e in events:
+            start = e["start"].get("dateTime", e["start"].get("date", "?"))
+            lines.append(f"• {e.get('summary','(no title)')} — {start}")
+        return f"Upcoming {len(events)} events:\n" + "\n".join(lines)
+    except Exception as exc:
+        return f"✗ calendar_list_events error: {exc}"
+
+
+def tool_calendar_create_event(
+    title: str, start: str, end: str,
+    description: str = "", attendees: list | None = None
+) -> str:
+    service, err = _get_google_service("calendar", "v3")
+    if err:
+        return err
+    try:
+        body = {
+            "summary": title,
+            "description": description,
+            "start": {"dateTime": start, "timeZone": "Asia/Kolkata"},
+            "end":   {"dateTime": end,   "timeZone": "Asia/Kolkata"},
+        }
+        if attendees:
+            body["attendees"] = [{"email": a} for a in attendees]
+
+        event = service.events().insert(calendarId="primary", body=body).execute()
+        return f"✓ Event created: {event.get('summary')} — {event.get('htmlLink')}"
+    except Exception as exc:
+        return f"✗ calendar_create_event error: {exc}"
+
+
+def tool_gmail_list_emails(max_results: int = 10, query: str = "") -> str:
+    service, err = _get_google_service("gmail", "v1")
+    if err:
+        return err
+    try:
+        params = {"userId": "me", "maxResults": max_results}
+        if query:
+            params["q"] = query
+        result = service.users().messages().list(**params).execute()
+        messages = result.get("messages", [])
+        if not messages:
+            return "No emails found."
+
+        lines = []
+        for m in messages[:max_results]:
+            msg = service.users().messages().get(
+                userId="me", id=m["id"], format="metadata",
+                metadataHeaders=["Subject", "From", "Date"]
+            ).execute()
+            headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+            lines.append(
+                f"• [{headers.get('Date','?')[:16]}] "
+                f"From: {headers.get('From','?')[:40]} | "
+                f"Subject: {headers.get('Subject','(no subject)')[:60]}"
+            )
+        return f"Found {len(lines)} emails:\n" + "\n".join(lines)
+    except Exception as exc:
+        return f"✗ gmail_list_emails error: {exc}"
+
+
+def tool_gmail_send_email(to: str, subject: str, body: str, cc: str = "") -> str:
+    service, err = _get_google_service("gmail", "v1")
+    if err:
+        return err
+    try:
+        import base64
+        from email.mime.text import MIMEText
+
+        msg = MIMEText(body)
+        msg["to"] = to
+        msg["subject"] = subject
+        if cc:
+            msg["cc"] = cc
+
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        service.users().messages().send(userId="me", body={"raw": raw}).execute()
+        return f"✓ Email sent to {to} — Subject: {subject}"
+    except Exception as exc:
+        return f"✗ gmail_send_email error: {exc}"
+
+
+# ── Tool dispatcher ───────────────────────────────────────────────────────────
+
 async def execute_tool(name: str, tool_input: dict) -> str:
     """Async dispatch for all tool calls."""
     if name == "write_file":
@@ -216,5 +402,34 @@ async def execute_tool(name: str, tool_input: dict) -> str:
         )
     elif name == "web_search":
         return await tool_web_search(tool_input["query"])
+    elif name == "calendar_list_events":
+        return await asyncio.to_thread(
+            tool_calendar_list_events,
+            tool_input.get("max_results", 10),
+            tool_input.get("calendar_id", "primary"),
+        )
+    elif name == "calendar_create_event":
+        return await asyncio.to_thread(
+            tool_calendar_create_event,
+            tool_input["title"],
+            tool_input["start"],
+            tool_input["end"],
+            tool_input.get("description", ""),
+            tool_input.get("attendees"),
+        )
+    elif name == "gmail_list_emails":
+        return await asyncio.to_thread(
+            tool_gmail_list_emails,
+            tool_input.get("max_results", 10),
+            tool_input.get("query", ""),
+        )
+    elif name == "gmail_send_email":
+        return await asyncio.to_thread(
+            tool_gmail_send_email,
+            tool_input["to"],
+            tool_input["subject"],
+            tool_input["body"],
+            tool_input.get("cc", ""),
+        )
     else:
         return f"✗ Unknown tool: {name}"

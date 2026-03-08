@@ -1,0 +1,45 @@
+version: "3.9"
+
+# MANIK.AI — Self-hosted Docker Compose
+# Usage: cp .env.example .env && nano .env && docker compose up -d
+
+services:
+
+  # ── Backend (FastAPI + Agent) ───────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: manik-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./backend/workspace:/app/workspace  # persistent workspace files
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Frontend (React → nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        # Backend URL: empty = nginx proxies /api/ to backend service
+        VITE_API_URL: ""
+    container_name: manik-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  workspace:

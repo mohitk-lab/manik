@@ -1,29 +1,38 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 
 // ═══════════════════════════════════════════════════════════════
-// MANIK.AI — Super Agentic Multi-Skill Digital Twin
-// Built from 17+ Claude Skills, 200+ conversations, infinite hustle
+// MANIK.AI v2 — Free, Open-Source, Self-Hosted Autonomous AI Agent
+// Connects AI to WhatsApp/Telegram • Smart model switching • Local-first
 // ═══════════════════════════════════════════════════════════════
+
+const TIER_STYLE = {
+  mini:     { bg: "#0a1a0a", border: "#10b98140", text: "#10b981", label: "⚡ MINI" },
+  standard: { bg: "#0a0a1a", border: "#3b82f640", text: "#3b82f6", label: "◈ STD"  },
+  power:    { bg: "#1a0a0a", border: "#ef444440", text: "#ef4444", label: "◉ POWER"},
+};
+
 // ═══════════════════════════════════════════════════════════════
-// SKILL REGISTRY — All 16+ Skills with metadata
+// SKILL REGISTRY — 18 Skills
 // ═══════════════════════════════════════════════════════════════
 const SKILLS = [
-  { id: "promo", name: "Promo Scriptwriter", icon: "🎬", color: "#ef4444", tags: ["script","promo","vo","dialect","30s","60s","15s","recap","bhojpuri","haryanvi"], level: "Master" },
-  { id: "architect", name: "AI Tool Architect", icon: "🏗️", color: "#3b82f6", tags: ["fastapi","react","api","backend","pipeline","ffmpeg","system","architecture","docker"], level: "Master" },
-  { id: "daksh", name: "DAKSH Orchestrator", icon: "⚡", color: "#f59e0b", tags: ["daksh","pipeline","orchestrate","full","launch","season","batch","sprint"], level: "Master" },
-  { id: "regional", name: "Regional Language", icon: "🗣️", color: "#10b981", tags: ["bhojpuri","haryanvi","rajasthani","gujarati","marathi","dialect","translate","convert","regional"], level: "Expert" },
-  { id: "elevenlabs", name: "ElevenLabs Voice", icon: "🎙️", color: "#8b5cf6", tags: ["elevenlabs","voice","vo","tts","audio","synthesis","ssml","clone"], level: "Master" },
-  { id: "remotion", name: "Remotion Engine", icon: "🎥", color: "#ec4899", tags: ["remotion","video","render","animation","template","react","programmatic"], level: "Expert" },
-  { id: "creative", name: "Creative Director", icon: "🎭", color: "#f97316", tags: ["film","cinema","shot","storyboard","mood","treatment","runway","midjourney","sora","director"], level: "Expert" },
-  { id: "competitor", name: "Competitor Intel", icon: "🔍", color: "#06b6d4", tags: ["competitor","jiocinema","zee5","mx","ullu","market","benchmark","ott"], level: "Expert" },
-  { id: "mckinsey", name: "McKinsey Research", icon: "📊", color: "#14b8a6", tags: ["mckinsey","research","tam","sam","som","market","sizing","strategy","mece","pyramid"], level: "Expert" },
-  { id: "calendar", name: "Content Calendar", icon: "📅", color: "#a855f7", tags: ["calendar","schedule","festival","release","sprint","plan","quarter","timing"], level: "Proficient" },
-  { id: "asset", name: "Asset Pipeline", icon: "🗄️", color: "#64748b", tags: ["asset","footage","clip","whisper","chromadb","tag","ingest","search"], level: "Expert" },
-  { id: "motion", name: "Motion & Promo", icon: "✨", color: "#e11d48", tags: ["after effects","davinci","mogrt","fusion","motion","template","pacing","cuts"], level: "Master" },
-  { id: "okr", name: "OKR & Strategy", icon: "📈", color: "#059669", tags: ["okr","deck","pitch","investor","qbr","leadership","strategy","presentation"], level: "Proficient" },
-  { id: "video", name: "Video Analyst", icon: "🔬", color: "#7c3aed", tags: ["analyze","video","tag","metadata","hook","detect","organize","catalog"], level: "Proficient" },
-  { id: "dualbrain", name: "Dual Brain AI", icon: "🧠", color: "#d946ef", tags: ["gemini","claude","dual","brain","routing","model","orchestrate","confidence"], level: "Expert" },
-  { id: "converter", name: "Script Converter", icon: "🔄", color: "#0891b2", tags: ["convert","script","language","4 languages","regional","translate"], level: "Expert" },
+  { id: "promo",     name: "Promo Scriptwriter",   icon: "🎬", color: "#ef4444", tags: ["script","promo","vo","dialect","30s","60s","15s","recap","bhojpuri","haryanvi"], level: "Master" },
+  { id: "architect", name: "AI Tool Architect",     icon: "🏗️", color: "#3b82f6", tags: ["fastapi","react","api","backend","pipeline","ffmpeg","system","architecture","docker"], level: "Master" },
+  { id: "daksh",     name: "DAKSH Orchestrator",    icon: "⚡", color: "#f59e0b", tags: ["daksh","pipeline","orchestrate","full","launch","season","batch","sprint"], level: "Master" },
+  { id: "regional",  name: "Regional Language",     icon: "🗣️", color: "#10b981", tags: ["bhojpuri","haryanvi","rajasthani","gujarati","marathi","dialect","translate","convert","regional"], level: "Expert" },
+  { id: "elevenlabs",name: "ElevenLabs Voice",      icon: "🎙️", color: "#8b5cf6", tags: ["elevenlabs","voice","vo","tts","audio","synthesis","ssml","clone"], level: "Master" },
+  { id: "remotion",  name: "Remotion Engine",       icon: "🎥", color: "#ec4899", tags: ["remotion","video","render","animation","template","react","programmatic"], level: "Expert" },
+  { id: "creative",  name: "Creative Director",     icon: "🎭", color: "#f97316", tags: ["film","cinema","shot","storyboard","mood","treatment","runway","midjourney","sora","director"], level: "Expert" },
+  { id: "competitor",name: "Competitor Intel",      icon: "🔍", color: "#06b6d4", tags: ["competitor","jiocinema","zee5","mx","ullu","market","benchmark","ott"], level: "Expert" },
+  { id: "mckinsey",  name: "McKinsey Research",     icon: "📊", color: "#14b8a6", tags: ["mckinsey","research","tam","sam","som","market","sizing","strategy","mece","pyramid"], level: "Expert" },
+  { id: "calendar",  name: "Calendar & Gmail",      icon: "📅", color: "#a855f7", tags: ["calendar","schedule","festival","release","sprint","plan","quarter","timing","gmail","email","inbox"], level: "Proficient" },
+  { id: "asset",     name: "Asset Pipeline",        icon: "🗄️", color: "#64748b", tags: ["asset","footage","clip","whisper","chromadb","tag","ingest","search"], level: "Expert" },
+  { id: "motion",    name: "Motion & Promo",        icon: "✨", color: "#e11d48", tags: ["after effects","davinci","mogrt","fusion","motion","template","pacing","cuts"], level: "Master" },
+  { id: "okr",       name: "OKR & Strategy",        icon: "📈", color: "#059669", tags: ["okr","deck","pitch","investor","qbr","leadership","strategy","presentation"], level: "Proficient" },
+  { id: "video",     name: "Video Analyst",         icon: "🔬", color: "#7c3aed", tags: ["analyze","video","tag","metadata","hook","detect","organize","catalog"], level: "Proficient" },
+  { id: "whatsapp",  name: "WhatsApp Automation",   icon: "💬", color: "#25d366", tags: ["whatsapp","message","chat","automate","bot","wa","notify","send"], level: "Expert" },
+  { id: "telegram",  name: "Telegram Bot",          icon: "✈️", color: "#229ed9", tags: ["telegram","bot","channel","group","notify","message","broadcast"], level: "Expert" },
+  { id: "smartroute",name: "Smart Model Router",    icon: "🔀", color: "#f59e0b", tags: ["smart","route","model","cost","token","mini","standard","power","cheap","optimize"], level: "Master" },
+  { id: "converter", name: "Script Converter",      icon: "🔄", color: "#0891b2", tags: ["convert","script","language","4 languages","regional","translate"], level: "Expert" },
 ];
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
@@ -33,8 +42,8 @@ const QUICK_ACTIONS = [
   { label: "🏗️ Architect a Tool", prompt: "Mujhe ek asset search tool banana hai jo natural language query se footage dhundhe — architecture bata" },
   { label: "⚡ DAKSH Full Pipeline", prompt: "DAKSH activate karo — naya show launch: 'Dil Ki Zameen', Haryanvi, emotional drama, synopsis: ek ladki apne baap ki zameen bachane ke liye court jaati hai" },
   { label: "📊 Market Research", prompt: "India ke regional OTT market ka McKinsey-style analysis chahiye — TAM/SAM/SOM with Stage ka competitive positioning" },
-  { label: "🧠 Teach Me Something", prompt: "Mujhe WebSocket real-time streaming sikhao — mere Stage tools ke context mein explain kar" },
-  { label: "🔍 Competitor Check", prompt: "JioCinema ne kya naya launch kiya? Stage ke liye counter strategy bana" },
+  { label: "💬 WhatsApp Setup Guide", prompt: "Mujhe step-by-step batao MANIK.AI ko WhatsApp se kaise connect karun — Meta Cloud API free setup" },
+  { label: "🔀 Smart Router Test", prompt: "Explain how your smart model routing works — which tier would you pick for different types of tasks and why?" },
 ];
 
 function detectSkills(msg) {
@@ -117,7 +126,13 @@ export default function ManikAI() {
           if (!raw) continue;
           try {
             const event = JSON.parse(raw);
-            if (event.type === "text") {
+            if (event.type === "model_selected") {
+              setMessages(prev => prev.map(m =>
+                m.ts === assistantId
+                  ? { ...m, tier: event.tier, model: event.model }
+                  : m
+              ));
+            } else if (event.type === "text") {
               setMessages(prev => prev.map(m =>
                 m.ts === assistantId
                   ? { ...m, content: m.content + event.content }
@@ -130,6 +145,11 @@ export default function ManikAI() {
                   : m
               ));
             } else if (event.type === "done") {
+              setMessages(prev => prev.map(m =>
+                m.ts === assistantId
+                  ? { ...m, tokens: event.tokens }
+                  : m
+              ));
               setStats(prev => ({
                 totalMsgs: prev.totalMsgs + 1,
                 skillsUsed: new Set([...prev.skillsUsed, ...detected.map(s => s.id)]),
@@ -192,13 +212,13 @@ export default function ManikAI() {
               WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
             }}>MANIK.AI</div>
             <div style={{ fontSize: 9, color: "#666", letterSpacing: 1 }}>
-              16 SKILLS • STAGE OTT • AGENTIC BRAIN
+              18 SKILLS • WHATSAPP • TELEGRAM • SMART ROUTING
             </div>
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 4 }}>
-          {["chat", "skills", "brain"].map(v => (
+          {["chat", "skills", "connect", "brain"].map(v => (
             <button key={v} onClick={() => setView(v)} style={{
               padding: "6px 14px", fontSize: 10, fontWeight: 600,
               background: view === v ? "#ef4444" : "#1a1a1a",
@@ -255,10 +275,10 @@ export default function ManikAI() {
                     WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
                   }}>MANIK.AI</div>
                   <div style={{ fontSize: 11, color: "#555", letterSpacing: 1 }}>
-                    SUPER AGENTIC • MULTI-SKILL • DIGITAL TWIN
+                    FREE • OPEN-SOURCE • SELF-HOSTED AUTONOMOUS AI
                   </div>
                   <div style={{ fontSize: 10, color: "#333", marginTop: 4 }}>
-                    Promo Scripts • AI Architecture • DAKSH Pipeline • Regional Dialects • Voice Synthesis • Creative Direction
+                    WhatsApp • Telegram • Calendar • Gmail • Smart Switching • Local-First
                   </div>
                 </div>
 
@@ -353,8 +373,24 @@ export default function ManikAI() {
                   </div>
                 )}
 
-                <div style={{ fontSize: 8, color: "#333", padding: "0 4px" }}>
-                  {new Date(msg.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 4px" }}>
+                  <span style={{ fontSize: 8, color: "#333" }}>
+                    {new Date(msg.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  {msg.tier && TIER_STYLE[msg.tier] && (
+                    <span style={{
+                      fontSize: 7, padding: "1px 5px", borderRadius: 3,
+                      background: TIER_STYLE[msg.tier].bg,
+                      color: TIER_STYLE[msg.tier].text,
+                      border: `1px solid ${TIER_STYLE[msg.tier].border}`,
+                      fontFamily: "inherit", letterSpacing: 0.5,
+                    }}>
+                      {TIER_STYLE[msg.tier].label}
+                    </span>
+                  )}
+                  {msg.tokens > 0 && (
+                    <span style={{ fontSize: 7, color: "#2a2a2a" }}>{msg.tokens}t</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -386,7 +422,7 @@ export default function ManikAI() {
               SKILL REGISTRY
             </div>
             <div style={{ fontSize: 10, color: "#555", marginBottom: 20 }}>
-              16 specialized skills • Built from 200+ conversations • Production-grade knowledge
+              18 specialized skills • WhatsApp + Telegram + Calendar + Gmail • Smart Switching
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
@@ -441,6 +477,99 @@ export default function ManikAI() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* CONNECT VIEW */}
+        {view === "connect" && (
+          <div style={{ padding: 20, maxWidth: 720 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#25d366", marginBottom: 4, letterSpacing: 2 }}>
+              CONNECTORS
+            </div>
+            <div style={{ fontSize: 10, color: "#555", marginBottom: 20 }}>
+              Connect MANIK.AI to messaging apps and Google services via .env settings
+            </div>
+
+            {[
+              {
+                icon: "💬", name: "WhatsApp", color: "#25d366",
+                envVars: ["WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_VERIFY_TOKEN"],
+                steps: [
+                  "Go to developers.facebook.com → Create App → WhatsApp",
+                  "Get Phone Number ID + Permanent Access Token",
+                  "Set webhook URL: https://your-domain/api/whatsapp/webhook",
+                  "Add env vars and restart backend",
+                ],
+                webhook: "/api/whatsapp/webhook",
+              },
+              {
+                icon: "✈️", name: "Telegram", color: "#229ed9",
+                envVars: ["TELEGRAM_BOT_TOKEN"],
+                steps: [
+                  "Open Telegram → message @BotFather",
+                  "/newbot → follow prompts → copy the token",
+                  "Add TELEGRAM_BOT_TOKEN to .env",
+                  "Restart backend — bot starts polling automatically",
+                ],
+                webhook: null,
+              },
+              {
+                icon: "📅", name: "Google Calendar + Gmail", color: "#a855f7",
+                envVars: ["GOOGLE_TOKEN_JSON", "GOOGLE_CREDENTIALS_JSON"],
+                steps: [
+                  "console.cloud.google.com → Enable Calendar API + Gmail API",
+                  "Create OAuth2 credentials → download credentials.json",
+                  "Run: cd backend && python setup_google.py",
+                  "Paste output token JSON into GOOGLE_TOKEN_JSON env var",
+                ],
+                webhook: null,
+              },
+              {
+                icon: "🔀", name: "Smart Model Switching", color: "#f59e0b",
+                envVars: ["SMART_ROUTING", "MODEL_MINI", "MODEL_STANDARD", "MODEL_POWER"],
+                steps: [
+                  "Set SMART_ROUTING=true (default) in .env",
+                  "Customize MODEL_MINI, MODEL_STANDARD, MODEL_POWER",
+                  "Watch the tier badge (MINI/STD/POWER) on each response",
+                  "Simple queries auto-route to cheaper models — saves ~70% cost",
+                ],
+                webhook: null,
+              },
+            ].map((c) => (
+              <div key={c.name} style={{
+                marginBottom: 16, padding: "16px 18px", background: "#111",
+                border: `1px solid ${c.color}20`, borderRadius: 10,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 20 }}>{c.icon}</span>
+                  <span style={{ fontWeight: 700, color: c.color, fontSize: 13, letterSpacing: 1 }}>{c.name}</span>
+                  {c.webhook && (
+                    <span style={{ fontSize: 9, color: "#555", marginLeft: "auto", fontFamily: "inherit" }}>
+                      webhook: {c.webhook}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: 10 }}>
+                  {c.steps.map((step, i) => (
+                    <div key={i} style={{ fontSize: 11, color: "#888", marginBottom: 4, display: "flex", gap: 8 }}>
+                      <span style={{ color: c.color, opacity: 0.6, flexShrink: 0 }}>{i + 1}.</span>
+                      <span>{step}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {c.envVars.map(v => (
+                    <code key={v} style={{
+                      fontSize: 9, padding: "2px 6px", borderRadius: 3,
+                      background: "#0a0a0a", border: "1px solid #2a2a2a", color: "#888",
+                      fontFamily: "inherit",
+                    }}>{v}</code>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

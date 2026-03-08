@@ -3,7 +3,7 @@ import json
 import logging
 from typing import AsyncGenerator
 
-import anthropic
+from openai import AsyncOpenAI
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -44,9 +44,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── OpenRouter client ─────────────────────────────────────────────────────────
+# ── OpenRouter client (OpenAI-compatible) ─────────────────────────────────────
 
-client = anthropic.Anthropic(
+client = AsyncOpenAI(
     api_key=OPENROUTER_API_KEY,
     base_url="https://openrouter.ai/api/v1",
     default_headers={
@@ -133,7 +133,7 @@ def sse(event: dict) -> str:
 # ── Agentic Loop (streaming) ──────────────────────────────────────────────────
 
 async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
-    # Merge base prompt + config personality_extra + request system_extra
+    # Build system prompt
     system = MANIK_SYSTEM_PROMPT
     extra = get_personality_extra()
     if extra:
@@ -141,15 +141,19 @@ async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
     if request.system_extra:
         system += f"\n\n{request.system_extra}"
 
-    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    # OpenAI-format messages (system message first)
+    messages = [{"role": "system", "content": system}]
+    messages += [{"role": m.role, "content": m.content} for m in request.messages]
 
+    # Smart routing
     last_user_msg = next(
         (m.content for m in reversed(request.messages) if m.role == "user"), ""
     )
     model, tier = smart_router.route(last_user_msg, len(messages))
     logger.info(f"[router] tier={tier} model={model}")
-
     yield sse({"type": "model_selected", "tier": tier, "model": model})
+
+    active_tools = get_active_tool_definitions(TOOL_DEFINITIONS)
 
     iteration = 0
     max_iterations = 12
@@ -158,62 +162,54 @@ async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
     while iteration < max_iterations:
         iteration += 1
 
-        response = await asyncio.to_thread(
-            client.messages.create,
+        response = await client.chat.completions.create(
             model=model,
             max_tokens=MAX_TOKENS,
-            system=system,
-            tools=get_active_tool_definitions(TOOL_DEFINITIONS),
             messages=messages,
+            tools=active_tools,
+            tool_choice="auto",
         )
 
-        if hasattr(response, "usage") and response.usage:
-            total_tokens += (response.usage.input_tokens or 0) + (response.usage.output_tokens or 0)
+        choice = response.choices[0]
+        msg = choice.message
 
-        assistant_content = []
-        for block in response.content:
-            if block.type == "text":
-                yield sse({"type": "text", "content": block.text})
-                assistant_content.append({"type": "text", "text": block.text})
-            elif block.type == "tool_use":
-                yield sse({
-                    "type": "tool_use",
-                    "name": block.name,
-                    "input": block.input,
-                    "tool_use_id": block.id,
-                })
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                })
+        if response.usage:
+            total_tokens += (response.usage.prompt_tokens or 0) + (response.usage.completion_tokens or 0)
 
-        messages.append({"role": "assistant", "content": assistant_content})
+        # Yield text content
+        if msg.content:
+            yield sse({"type": "text", "content": msg.content})
 
-        if response.stop_reason == "end_turn":
+        # Build assistant message for history
+        assistant_msg: dict = {"role": "assistant", "content": msg.content or ""}
+        if msg.tool_calls:
+            assistant_msg["tool_calls"] = [tc.model_dump() for tc in msg.tool_calls]
+        messages.append(assistant_msg)
+
+        # Stop if no tool calls
+        if not msg.tool_calls or choice.finish_reason == "stop":
             break
 
-        tool_results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                result = await execute_tool(block.name, block.input)
-                yield sse({
-                    "type": "tool_result",
-                    "name": block.name,
-                    "result": result,
-                    "tool_use_id": block.id,
-                })
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
+        # Execute tool calls
+        for tc in msg.tool_calls:
+            fn_name = tc.function.name
+            try:
+                fn_args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                fn_args = {}
 
-        if tool_results:
-            messages.append({"role": "user", "content": tool_results})
-        else:
-            break
+            yield sse({"type": "tool_use", "name": fn_name, "input": fn_args, "tool_use_id": tc.id})
+
+            result = await execute_tool(fn_name, fn_args)
+
+            yield sse({"type": "tool_result", "name": fn_name, "result": result, "tool_use_id": tc.id})
+
+            # Append tool result in OpenAI format
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result,
+            })
 
     yield sse({"type": "done", "tier": tier, "model": model, "tokens": total_tokens})
 
@@ -304,6 +300,22 @@ async def health():
     }
 
 
+@app.get("/api/config")
+async def get_config():
+    return {
+        "agent":         {"name": get_agent_name()},
+        "skills":        get_skills(),
+        "quick_actions": get_quick_actions(),
+        "smart_routing": smart_router.TIERS,
+    }
+
+
+@app.post("/api/config/reload")
+async def reload_cfg():
+    reload_config()
+    return {"status": "reloaded", "skills": len(get_skills())}
+
+
 @app.get("/api/connectors/status")
 async def connectors_status():
     import config as cfg
@@ -344,23 +356,3 @@ async def whatsapp_message(request: Request):
     payload = await request.json()
     asyncio.create_task(whatsapp_connector.handle_payload(payload))
     return {"status": "ok"}
-
-
-@app.get("/api/config")
-async def get_config():
-    """Serve manik.config.yaml to the frontend — skills, quick actions, agent meta."""
-    return {
-        "agent": {
-            "name": get_agent_name(),
-        },
-        "skills": get_skills(),
-        "quick_actions": get_quick_actions(),
-        "smart_routing": smart_router.TIERS,
-    }
-
-
-@app.post("/api/config/reload")
-async def reload_cfg():
-    """Hot-reload manik.config.yaml without restarting the server."""
-    reload_config()
-    return {"status": "reloaded", "skills": len(get_skills())}

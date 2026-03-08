@@ -1,5 +1,5 @@
 # Core
-anthropic
+openai
 fastapi
 uvicorn[standard]
 python-dotenv

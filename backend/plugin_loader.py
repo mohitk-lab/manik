@@ -71,7 +71,8 @@ def get_active_tool_definitions(all_tool_definitions: list[dict]) -> list[dict]:
 
     active = []
     for tool in all_tool_definitions:
-        name = tool.get("name", "")
+        # OpenAI format: {"type":"function","function":{"name":...}}
+        name = tool.get("function", {}).get("name") or tool.get("name", "")
         tool_cfg = tools_config.get(name, {})
         # Default to enabled if not specified
         if isinstance(tool_cfg, dict):

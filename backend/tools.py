@@ -7,127 +7,67 @@ from pathlib import Path
 WORKSPACE = Path(__file__).parent / "workspace"
 WORKSPACE.mkdir(exist_ok=True)
 
+def _fn(name, description, properties, required=None):
+    """Helper — build an OpenAI-format tool definition."""
+    schema = {"type": "object", "properties": properties}
+    if required:
+        schema["required"] = required
+    return {"type": "function", "function": {"name": name, "description": description, "parameters": schema}}
+
+
 TOOL_DEFINITIONS = [
-    {
-        "name": "write_file",
-        "description": "Write content to a file in the workspace. Use this to save promo scripts, configs, templates, or any generated content.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Relative file path (e.g. 'scripts/bhojpuri_promo.txt')"},
-                "content": {"type": "string", "description": "Text content to write"},
-            },
-            "required": ["path", "content"],
-        },
-    },
-    {
-        "name": "read_file",
-        "description": "Read a file from the workspace.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Relative file path to read"},
-            },
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "list_files",
-        "description": "List files in the workspace directory.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "directory": {"type": "string", "description": "Relative directory path (default: '.')"},
-            },
-        },
-    },
-    {
-        "name": "run_command",
-        "description": "Run a shell command in the workspace directory. Use for ffmpeg, python scripts, file operations, etc.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "Shell command to execute"},
-            },
-            "required": ["command"],
-        },
-    },
-    {
-        "name": "elevenlabs_tts",
-        "description": "Generate voice audio using ElevenLabs TTS API. Saves an mp3 file to the workspace.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "text": {"type": "string", "description": "Text to convert to speech"},
-                "voice_id": {"type": "string", "description": "ElevenLabs voice ID"},
-                "stability": {"type": "number", "description": "Voice stability (0.0-1.0). Use 0.3-0.5 for action, 0.5-0.7 for drama, 0.6-0.8 for devotional"},
-                "output_path": {"type": "string", "description": "Output file path relative to workspace (e.g. 'audio/promo_vo.mp3')"},
-            },
-            "required": ["text", "voice_id", "output_path"],
-        },
-    },
-    {
-        "name": "web_search",
-        "description": "Search the web for information. Use for competitor intel (JioCinema, Zee5, MX Player), market data, show information, or any research.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Search query"},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "calendar_list_events",
-        "description": "List upcoming events from Google Calendar. Returns next N events.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "max_results": {"type": "integer", "description": "Max events to return (default 10)"},
-                "calendar_id": {"type": "string", "description": "Calendar ID (default: primary)"},
-            },
-        },
-    },
-    {
-        "name": "calendar_create_event",
-        "description": "Create a new event in Google Calendar.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "title":       {"type": "string", "description": "Event title/summary"},
-                "start":       {"type": "string", "description": "Start datetime ISO 8601, e.g. '2025-03-15T10:00:00+05:30'"},
-                "end":         {"type": "string", "description": "End datetime ISO 8601"},
-                "description": {"type": "string", "description": "Event description (optional)"},
-                "attendees":   {"type": "array",  "items": {"type": "string"}, "description": "List of attendee emails"},
-            },
-            "required": ["title", "start", "end"],
-        },
-    },
-    {
-        "name": "gmail_list_emails",
-        "description": "List recent emails from Gmail inbox.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "max_results": {"type": "integer", "description": "Max emails to return (default 10)"},
-                "query": {"type": "string", "description": "Gmail search query, e.g. 'is:unread from:boss@company.com'"},
-            },
-        },
-    },
-    {
-        "name": "gmail_send_email",
-        "description": "Send an email via Gmail.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "to":      {"type": "string", "description": "Recipient email address"},
-                "subject": {"type": "string", "description": "Email subject"},
-                "body":    {"type": "string", "description": "Email body (plain text)"},
-                "cc":      {"type": "string", "description": "CC email address (optional)"},
-            },
-            "required": ["to", "subject", "body"],
-        },
-    },
+    _fn("write_file", "Write content to a file in the workspace. Use to save promo scripts, configs, templates, or any generated content.", {
+        "path":    {"type": "string", "description": "Relative file path (e.g. 'scripts/bhojpuri_promo.txt')"},
+        "content": {"type": "string", "description": "Text content to write"},
+    }, required=["path", "content"]),
+
+    _fn("read_file", "Read a file from the workspace.", {
+        "path": {"type": "string", "description": "Relative file path to read"},
+    }, required=["path"]),
+
+    _fn("list_files", "List files in the workspace directory.", {
+        "directory": {"type": "string", "description": "Relative directory path (default: '.')"},
+    }),
+
+    _fn("run_command", "Run a shell command in the workspace directory. Use for ffmpeg, python scripts, file operations, etc.", {
+        "command": {"type": "string", "description": "Shell command to execute"},
+    }, required=["command"]),
+
+    _fn("elevenlabs_tts", "Generate voice audio using ElevenLabs TTS API. Saves an mp3 file to the workspace.", {
+        "text":        {"type": "string", "description": "Text to convert to speech"},
+        "voice_id":    {"type": "string", "description": "ElevenLabs voice ID"},
+        "stability":   {"type": "number", "description": "Voice stability (0.0-1.0)"},
+        "output_path": {"type": "string", "description": "Output file path relative to workspace (e.g. 'audio/promo_vo.mp3')"},
+    }, required=["text", "voice_id", "output_path"]),
+
+    _fn("web_search", "Search the web for information. Use for competitor intel, market data, show information, or any research.", {
+        "query": {"type": "string", "description": "Search query"},
+    }, required=["query"]),
+
+    _fn("calendar_list_events", "List upcoming events from Google Calendar.", {
+        "max_results": {"type": "integer", "description": "Max events to return (default 10)"},
+        "calendar_id": {"type": "string",  "description": "Calendar ID (default: primary)"},
+    }),
+
+    _fn("calendar_create_event", "Create a new event in Google Calendar.", {
+        "title":       {"type": "string", "description": "Event title/summary"},
+        "start":       {"type": "string", "description": "Start datetime ISO 8601, e.g. '2025-03-15T10:00:00+05:30'"},
+        "end":         {"type": "string", "description": "End datetime ISO 8601"},
+        "description": {"type": "string", "description": "Event description (optional)"},
+        "attendees":   {"type": "array",  "items": {"type": "string"}, "description": "List of attendee emails"},
+    }, required=["title", "start", "end"]),
+
+    _fn("gmail_list_emails", "List recent emails from Gmail inbox.", {
+        "max_results": {"type": "integer", "description": "Max emails to return (default 10)"},
+        "query":       {"type": "string",  "description": "Gmail search query, e.g. 'is:unread'"},
+    }),
+
+    _fn("gmail_send_email", "Send an email via Gmail.", {
+        "to":      {"type": "string", "description": "Recipient email address"},
+        "subject": {"type": "string", "description": "Email subject"},
+        "body":    {"type": "string", "description": "Email body (plain text)"},
+        "cc":      {"type": "string", "description": "CC email address (optional)"},
+    }, required=["to", "subject", "body"]),
 ]
 
 

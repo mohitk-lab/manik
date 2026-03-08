@@ -24,9 +24,9 @@ agent:
 smart_routing:
   enabled: true
   tiers:
-    mini:     anthropic/claude-haiku-3-5     # simple Q&A, greetings
-    standard: anthropic/claude-sonnet-4-5    # coding, analysis, creative
-    power:    anthropic/claude-opus-4-6      # deep research, architecture
+    mini:     anthropic/claude-haiku-4.5      # simple Q&A, greetings (cheapest)
+    standard: anthropic/claude-sonnet-4.6     # coding, analysis, creative (default)
+    power:    anthropic/claude-opus-4.6       # deep research, architecture (powerful)
 
 # ── Skills Registry ───────────────────────────────────────────────
 # These appear in the frontend Skills tab and auto-detect from chat.

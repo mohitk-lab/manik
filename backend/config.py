@@ -16,9 +16,9 @@ load_dotenv(Path(__file__).parent / ".env")
 OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
 
 # Smart switching tier models (override via env vars)
-MODEL_MINI:     str = os.environ.get("MODEL_MINI",     "anthropic/claude-haiku-3-5")
-MODEL_STANDARD: str = os.environ.get("MODEL_STANDARD", "anthropic/claude-sonnet-4-5")
-MODEL_POWER:    str = os.environ.get("MODEL_POWER",    "anthropic/claude-opus-4-6")
+MODEL_MINI:     str = os.environ.get("MODEL_MINI",     "anthropic/claude-haiku-4.5")
+MODEL_STANDARD: str = os.environ.get("MODEL_STANDARD", "anthropic/claude-sonnet-4.6")
+MODEL_POWER:    str = os.environ.get("MODEL_POWER",    "anthropic/claude-opus-4.6")
 
 # Set SMART_ROUTING=false to always use MODEL_STANDARD
 SMART_ROUTING: bool = os.environ.get("SMART_ROUTING", "true").lower() == "true"

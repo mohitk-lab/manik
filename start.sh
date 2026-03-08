@@ -32,7 +32,7 @@ fi
 
 # Start backend in background
 echo -e "${GREEN}▶${RESET} Backend  → ${CYAN}http://localhost:8000${RESET}"
-cd backend && uvicorn main:app --reload --port 8000 &
+cd backend && uvicorn main:app --host 0.0.0.0 --reload --port 8000 &
 BACKEND_PID=$!
 cd ..
 
@@ -52,7 +52,7 @@ echo -e "${GREEN}▶${RESET} Frontend → ${CYAN}http://localhost:5173${RESET}"
 echo ""
 echo -e "  ${BOLD}Press Ctrl+C to stop both services${RESET}\n"
 
-npm run dev &
+npm run dev -- --host 0.0.0.0 &
 FRONTEND_PID=$!
 
 # Wait and handle Ctrl+C

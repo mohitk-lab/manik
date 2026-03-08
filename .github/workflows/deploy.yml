@@ -1,0 +1,32 @@
+name: Deploy MANIK.AI
+
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  deploy-frontend:
+    name: Frontend → Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_URL: https://manik-ai-backend.onrender.com
+      - name: Deploy to Vercel
+        run: npx vercel deploy --prod --yes --token $VERCEL_TOKEN
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: team_4yPOAb18JCTtiM18jofQ2dQD
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  deploy-backend:
+    name: Backend → Render
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render Deploy
+        run: curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"

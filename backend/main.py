@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import random
+import uuid
 from typing import AsyncGenerator
 
 from openai import AsyncOpenAI
@@ -130,6 +132,50 @@ def sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
+# ── Retry helper ─────────────────────────────────────────────────────────────
+
+async def _call_openrouter_with_retry(client, model, max_tokens, messages, tools, max_retries=3):
+    """Call OpenRouter API with exponential backoff retry."""
+    for attempt in range(max_retries + 1):
+        try:
+            return await client.chat.completions.create(
+                model=model,
+                max_tokens=max_tokens,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+            )
+        except Exception as e:
+            if attempt == max_retries:
+                raise
+            wait_time = (2 ** attempt) + random.uniform(0, 1)
+            logger.warning(f"[openrouter] Attempt {attempt+1} failed: {e}. Retrying in {wait_time:.1f}s...")
+            await asyncio.sleep(wait_time)
+
+
+# ── Message truncation ───────────────────────────────────────────────────────
+
+MAX_HISTORY_TOKENS_ESTIMATE = 50000  # rough char-based estimate
+MAX_HISTORY_MESSAGES = 40
+
+
+def _truncate_messages(messages: list[dict]) -> list[dict]:
+    """Keep system message + most recent messages within limits."""
+    if len(messages) <= 2:
+        return messages
+    system = messages[0]  # always keep system prompt
+    rest = messages[1:]
+    # Trim by message count
+    if len(rest) > MAX_HISTORY_MESSAGES:
+        rest = rest[-MAX_HISTORY_MESSAGES:]
+    # Trim by estimated token count (rough: 1 token ≈ 4 chars)
+    total_chars = sum(len(m.get("content", "") or "") for m in rest)
+    while total_chars > MAX_HISTORY_TOKENS_ESTIMATE and len(rest) > 2:
+        removed = rest.pop(0)
+        total_chars -= len(removed.get("content", "") or "")
+    return [system] + rest
+
+
 # ── Agentic Loop (streaming) ──────────────────────────────────────────────────
 
 async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
@@ -141,16 +187,22 @@ async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
     if request.system_extra:
         system += f"\n\n{request.system_extra}"
 
+    # Request ID for tracing
+    request_id = uuid.uuid4().hex[:8]
+
     # OpenAI-format messages (system message first)
     messages = [{"role": "system", "content": system}]
     messages += [{"role": m.role, "content": m.content} for m in request.messages]
+
+    # Truncate message history to prevent unbounded token growth
+    messages = _truncate_messages(messages)
 
     # Smart routing
     last_user_msg = next(
         (m.content for m in reversed(request.messages) if m.role == "user"), ""
     )
     model, tier = smart_router.route(last_user_msg, len(messages))
-    logger.info(f"[router] tier={tier} model={model}")
+    logger.info(f"[{request_id}] [router] tier={tier} model={model}")
     yield sse({"type": "model_selected", "tier": tier, "model": model})
 
     active_tools = get_active_tool_definitions(TOOL_DEFINITIONS)
@@ -162,13 +214,7 @@ async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
     while iteration < max_iterations:
         iteration += 1
 
-        response = await client.chat.completions.create(
-            model=model,
-            max_tokens=MAX_TOKENS,
-            messages=messages,
-            tools=active_tools,
-            tool_choice="auto",
-        )
+        response = await _call_openrouter_with_retry(client, model, MAX_TOKENS, messages, active_tools)
 
         choice = response.choices[0]
         msg = choice.message
@@ -198,6 +244,7 @@ async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
             except json.JSONDecodeError:
                 fn_args = {}
 
+            logger.info(f"[{request_id}] [iter {iteration}] tool_call: {fn_name}")
             yield sse({"type": "tool_use", "name": fn_name, "input": fn_args, "tool_use_id": tc.id})
 
             result = await execute_tool(fn_name, fn_args)
@@ -211,6 +258,7 @@ async def agentic_loop(request: ChatRequest) -> AsyncGenerator[str, None]:
                 "content": result,
             })
 
+    logger.info(f"[{request_id}] [done] iterations={iteration} tokens={total_tokens}")
     yield sse({"type": "done", "tier": tier, "model": model, "tokens": total_tokens})
 
 
@@ -354,5 +402,8 @@ async def whatsapp_message(request: Request):
     if not whatsapp_connector:
         raise HTTPException(503, "WhatsApp not configured")
     payload = await request.json()
+    # Basic validation
+    if not isinstance(payload, dict) or "entry" not in payload:
+        raise HTTPException(400, "Invalid webhook payload")
     asyncio.create_task(whatsapp_connector.handle_payload(payload))
     return {"status": "ok"}

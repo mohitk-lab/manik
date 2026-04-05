@@ -17,3 +17,11 @@ duckduckgo-search
 # google-api-python-client
 # google-auth
 # google-auth-oauthlib
+
+# Linting
+ruff
+
+# Testing
+pytest
+pytest-asyncio
+httpx

@@ -1,13 +1,52 @@
-name: Deploy MANIK.AI
+name: CI + Deploy MANIK.AI
 
 on:
   push:
     branches: [main, master]
+  pull_request:
+    branches: [main, master]
 
 jobs:
+  test-backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r requirements.txt
+      - run: pytest tests/ -v
+
+  test-frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm test
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: pip install ruff && ruff check backend/
+      - run: npm ci && npm run lint
+
   deploy-frontend:
     name: Frontend → Vercel
     runs-on: ubuntu-latest
+    needs: [test-frontend, test-backend, lint]
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,6 +66,8 @@ jobs:
   deploy-backend:
     name: Backend → Render
     runs-on: ubuntu-latest
+    needs: [test-frontend, test-backend, lint]
+    if: github.event_name == 'push'
     steps:
       - name: Trigger Render Deploy
         run: curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"

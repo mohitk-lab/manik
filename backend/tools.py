@@ -118,7 +118,29 @@ def tool_list_files(directory: str = ".") -> str:
         return f"✗ list_files error: {e}"
 
 
+BLOCKED_COMMANDS = [
+    "rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){", "fork bomb",
+    "chmod -R 777 /", "shutdown", "reboot", "halt", "poweroff",
+    "curl | sh", "curl | bash", "wget | sh", "wget | bash",
+    "> /dev/sda", "mv / ", "rm -rf ~",
+]
+
+
+def _is_command_safe(command: str) -> bool:
+    """Check command against blocklist."""
+    cmd_lower = command.lower().strip()
+    for blocked in BLOCKED_COMMANDS:
+        if blocked in cmd_lower:
+            return False
+    # Block commands that try to escape workspace
+    if ".." in command and ("/" in command or "\\" in command):
+        return False
+    return True
+
+
 async def tool_run_command(command: str) -> str:
+    if not _is_command_safe(command):
+        return "✗ Command blocked: this command matches a dangerous pattern and has been rejected for safety."
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
